@@ -1,0 +1,18 @@
+version: '3'
+
+services:
+  vm_router:
+    container_name: vm_router
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    ports:
+      - "8081:80"
+    privileged: true
+    tty: true
+    restart: always
+    develop:
+      watch:
+        - action: sync
+          path: ./
+          target: /workspaces/ipv6-router
