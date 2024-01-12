@@ -7,7 +7,9 @@ RUN apt-get update && \
         iproute2 \
         ethtool \
         iputils-ping \
-        net-tools
+        net-tools \
+        ndisc6 \
+        tcpdump
 
 COPY ./ /workspaces/ipv6-router
 WORKDIR ${WORKSPACE}

@@ -9,15 +9,20 @@ import (
 var ignoreIfNames = []string{"lo", "bond0", "dummy0", "tunl0", "sit0"}
 
 type netDevice struct {
-	name     string // インターフェース名
-	macAddr  [6]uint8
-	socketFd int
-	sockAddr syscall.SockaddrLinklayer
-	ipv6Dev  *Ipv6Device
-	//data []uint8
+	name      string // インターフェース名
+	macAddr   [6]uint8
+	socketFd  int
+	sockAddr  syscall.SockaddrLinklayer
+	ethHeader *ethernetHeader
+	ipv6Dev   *ipv6Device
 }
 
-func newNetIf(name string, macAddr net.HardwareAddr, socketFd int, sockAddr syscall.SockaddrLinklayer, ipv6Dev *Ipv6Device) *netDevice {
+func newNetIf(
+	name string,
+	macAddr net.HardwareAddr,
+	socketFd int,
+	sockAddr syscall.SockaddrLinklayer,
+	ipv6Dev *ipv6Device) *netDevice {
 	return &netDevice{
 		name:     name,
 		macAddr:  setMacAddr(macAddr),
@@ -52,9 +57,13 @@ func (netDev *netDevice) poll() error {
 	fmt.Printf("Received %d bytes from %s: %x\n", n, netDev.name, recvBuffer[:n])
 
 	// 受信したデータをイーサネットに送る
-	//ethernetInput(netDev, recvBuffer[:n])
+	ethernetInput(netDev, recvBuffer[:n])
 
 	return nil
+}
+
+func (netDev *netDevice) setEthHeader(ethHeader *ethernetHeader) {
+	netDev.ethHeader = ethHeader
 }
 
 // htons converts a short (uint16) from host-to-network byte order.

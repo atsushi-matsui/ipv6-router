@@ -30,6 +30,7 @@ ip netns exec host1 ethtool -K host1-router1 rx off tx off
 ip netns exec host1 ip route add default via 2001:db8:0:1001::1
 
 ### router1の設定
+#ip netns exec router1 ip addr add 2001:db8:0:1001::1/64 dev router1-host1
 ip netns exec router1 ip link set router1-host1 up
 ip netns exec router1 ethtool -K router1-host1 rx off tx off
 ip netns exec router1 ip link set router1-router2 up

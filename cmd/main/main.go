@@ -7,10 +7,8 @@ import (
 	"syscall"
 )
 
+// ネットワーク内のNICのリスト
 var netDevices []*netDevice
-
-// TODO: なんのやつかわかっていない
-var myMacAddress = "2001:db8:0:1001::1"
 
 func main() {
 
@@ -41,7 +39,7 @@ func main() {
 			log.Fatalf("Failed open socket: %s\n", err)
 		}
 
-		fmt.Printf("socket file descriptor: %+v\n", sockFd)
+		fmt.Printf("socket file descriptor: %d\n", sockFd)
 
 		// ソケットをインターフェイスにbindする
 		socketAddr := syscall.SockaddrLinklayer{
@@ -52,6 +50,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed bind socket: %s\n", err)
 		}
+		fmt.Printf("bind nic: %+v\n", inf)
 
 		// epollにソケットを監視させる
 		err = syscall.EpollCtl(epollFd, syscall.EPOLL_CTL_ADD, sockFd, &syscall.EpollEvent{
@@ -62,17 +61,36 @@ func main() {
 			log.Fatalf("Failed epollCtl: %s\n", err)
 		}
 
-		ipv6Dev := newIpv6(myMacAddress, 64)
+		netAddrs, err := inf.Addrs()
+		if err != nil {
+			log.Fatalf("get ip addr from nic interface is err : %s", err)
+		}
+
+		ipv6Addr := getIpv6Device(netAddrs)
+		if ipv6Addr == nil {
+			continue
+		}
+
+		ipv6Dev := newIpv6(*ipv6Addr, 64)
 		netDev := newNetIf(inf.Name, inf.HardwareAddr, sockFd, socketAddr, ipv6Dev)
 
 		netDevices = append(netDevices, netDev)
-		fmt.Printf("Effective netDevice, name is %s, socketFd is %s\n ", netDev.name, netDev.socketFd)
+		fmt.Printf("effective netDevice, name is %s, socketFd is %d\n ", netDev.name, netDev.socketFd)
 	}
 
 	// 有効なインターフェイスがなければ処理を終了する
 	if len(netDevices) == 0 {
 		log.Fatalf("No interface is enabled!")
 	}
+
+	// ndテーブルの初期化
+	initNdTable()
+
+	// TODO: 未実装
+	createPatriciaNode(in6Addr{0x00}, 0, false, nil)
+
+	// ネットワーク設定の投入
+	configure()
 
 	// epollでソケットの受信状況を確認する
 	for {
@@ -94,5 +112,21 @@ func main() {
 			}
 		}
 	}
+}
 
+func getNetDevByName(name string) *netDevice {
+	for _, netDev := range netDevices {
+		if netDev.name == name {
+			return netDev
+		}
+	}
+
+	return nil
+}
+
+func configure() {
+	configIpv6Addr(getNetDevByName("router1-host1"), parseIpv6("2001:db8:0:1001::1"), 64)
+	configIpv6Addr(getNetDevByName("router1-router2"), parseIpv6("2001:db8:0:1000::1"), 64)
+
+	updateNDTableEntry(getNetDevByName("router1-host1"), getMacAddr("host1", "host1-router1"), parseIpv6("2001:db8:0:1001::2"))
 }
