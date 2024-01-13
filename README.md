@@ -11,7 +11,6 @@
 - setup network
   ```sh
   ./scripts/init.sh
-  ./scripts/nd_table.sh
   ```
 - build
   ```sh
