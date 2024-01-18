@@ -78,7 +78,6 @@ func icmpv6Input(netDev *netDevice, srcAddr in6Addr, dstAddr in6Addr, icmpPacket
 
 		if netDev.ipv6Dev.address == nsPkt.targetAddr {
 			fmt.Printf("ns target match! %s\n", targetAddrStr)
-			fmt.Printf("option mac address! %s\n", fmtMacStr(nsPkt.optMacAddr))
 
 			updateNDTableEntry(netDev, nsPkt.optMacAddr, srcAddr)
 

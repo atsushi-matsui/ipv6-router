@@ -51,9 +51,8 @@ func ethernetInput(netDev *netDevice, buffer []byte) {
 	dstAddrStr := fmtMacStr(netDev.ethHeader.dstAddr)
 	deviceAddrStr := fmtMacStr(netDev.macAddr)
 
+	// 自分のMACアドレス宛てかマルチキャストアドレスでなければ終了する
 	if netDev.ethHeader.dstAddr != netDev.macAddr && netDev.ethHeader.dstAddr != ETHERNET_ADDRESS_BROADCAST && !(buffer[0] == ETHER_ADDR_IPV6_MCAST_PREFIX[0] && buffer[1] == ETHER_ADDR_IPV6_MCAST_PREFIX[1]) {
-		//if netDev.ethHeader.dstAddr != netDev.macAddr && netDev.ethHeader.dstAddr != ETHERNET_ADDRESS_BROADCAST {
-		// 自分のMACアドレス宛てかブロードキャストでなければ終了する
 		fmt.Printf("not handle address, dstMacAddr is %s, device addr is %s\n", dstAddrStr, deviceAddrStr)
 		return
 	}

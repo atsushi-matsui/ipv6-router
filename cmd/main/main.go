@@ -15,7 +15,7 @@ func main() {
 	// インターフェイスを取得する
 	interfaces, err := net.Interfaces()
 	if err != nil {
-		log.Fatalf("Not found interfaces : %s", err)
+		log.Fatalf("Not found interfaces : %s\n", err)
 	}
 	fmt.Printf("interfaces: %+v\n", interfaces)
 
@@ -23,7 +23,7 @@ func main() {
 	events := make([]syscall.EpollEvent, 10)
 	epollFd, err := syscall.EpollCreate1(0)
 	if err != nil {
-		log.Fatalf("Failed create epoll : %s", err)
+		log.Fatalf("Failed create epoll : %s\n", err)
 	}
 
 	for _, inf := range interfaces {
@@ -63,7 +63,7 @@ func main() {
 
 		netAddrs, err := inf.Addrs()
 		if err != nil {
-			log.Fatalf("get ip addr from nic interface is err : %s", err)
+			log.Fatalf("get ip addr from nic interface is err : %s\n", err)
 		}
 
 		ipv6Addr := getIpv6Device(netAddrs)
@@ -75,12 +75,12 @@ func main() {
 		netDev := newNetIf(inf.Name, inf.HardwareAddr, sockFd, socketAddr, ipv6Dev)
 
 		netDevices = append(netDevices, netDev)
-		fmt.Printf("effective netDevice, name is %s, socketFd is %d\n ", netDev.name, netDev.socketFd)
+		fmt.Printf("effective netDevice, name is %s, socketFd is %d\n", netDev.name, netDev.socketFd)
 	}
 
 	// 有効なインターフェイスがなければ処理を終了する
 	if len(netDevices) == 0 {
-		log.Fatalf("No interface is enabled!")
+		log.Fatalf("No interface is enabled!\n")
 	}
 
 	// ndテーブルの初期化

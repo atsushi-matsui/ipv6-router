@@ -170,6 +170,8 @@ func ipv6EncapOutput(dstAddr in6Addr, srcAddr in6Addr, buffer []byte, nextHdrNum
 		case NETWORK:
 			ipv6OutputToNextHop(resNode.route.nextHop, packet)
 		}
+	} else {
+		fmt.Printf("not found dst addr in forwarding table. addr is %s\n", fmtIpStr(dstAddr))
 	}
 }
 
