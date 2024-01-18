@@ -98,13 +98,13 @@ func icmpv6Input(netDev *netDevice, srcAddr in6Addr, dstAddr in6Addr, icmpPacket
 			phdr := ipv6PseudoHeader{
 				srcAddr:      netDev.ipv6Dev.address,
 				dstAddr:      srcAddr,
-				packetLength: uint32(unsafe.Sizeof(icmpv6Na{})), // nits: 直書きでいいかも
+				packetLength: uint32(unsafe.Sizeof(icmpv6Na{})),
 				zero:         [3]byte{0x00, 0x00, 0x00},
 				nextHeader:   IPV6_PROTOCOL_NUM_ICMP,
 			}
 
-			psum := checksum16(phdr.toPseudoHeader(), 0)
-			naPkt.hdr.checksum = checksum16(naPkt.icmpv6NaToPacket(), psum^0xffff)
+			psum := ^checksum16(phdr.toPseudoHeader(), 0)
+			naPkt.hdr.checksum = checksum16(naPkt.icmpv6NaToPacket(), psum)
 
 			ipv6EncapDevOutput(netDev, nsPkt.optMacAddr, srcAddr, naPkt.icmpv6NaToPacket(), IPV6_PROTOCOL_NUM_ICMP)
 		} else {
@@ -157,8 +157,8 @@ func icmpv6Input(netDev *netDevice, srcAddr in6Addr, dstAddr in6Addr, icmpPacket
 			nextHeader:   IPV6_PROTOCOL_NUM_ICMP,
 		}
 
-		psum := checksum16(phdr.toPseudoHeader(), 0)
-		replyIcmpv6echo.header.checksum = checksum16(replyIcmpv6echo.icmpv6EchoToPacket(), psum^0xffff)
+		psum := ^checksum16(phdr.toPseudoHeader(), 0)
+		replyIcmpv6echo.header.checksum = checksum16(replyIcmpv6echo.icmpv6EchoToPacket(), psum)
 		ipv6EncapOutput(srcAddr, netDev.ipv6Dev.address, replyIcmpv6echo.icmpv6EchoToPacket(), IPV6_PROTOCOL_NUM_ICMP)
 
 		break
@@ -168,20 +168,16 @@ func icmpv6Input(netDev *netDevice, srcAddr in6Addr, dstAddr in6Addr, icmpPacket
 func sendNsPacket(netDev *netDevice, targetAddr in6Addr) {
 	// 要請ノードマルチキャストアドレスを生成。近隣要請パケットはマルチキャストに解決したいアドレスの下位3byteを設定したアドレス宛に送信する。
 	// ff00::1がマルチキャスト下から２番目からの4bitがフラグ、最下位の4ビットがスコープを表す
-	mcastAddr := net.ParseIP(IPV6_MULTICAST_ADDRESS).To16()
-	mcastAddr[13] = targetAddr[13]
-	mcastAddr[14] = targetAddr[14]
-	mcastAddr[15] = targetAddr[15]
+	mcastAddr := in6Addr(net.ParseIP(IPV6_MULTICAST_ADDRESS).To16())
+	copy(mcastAddr[13:], targetAddr[13:])
 
 	phdr := ipv6PseudoHeader{
 		srcAddr:      netDev.ipv6Dev.address,
-		dstAddr:      in6Addr(mcastAddr),
-		packetLength: uint32(unsafe.Sizeof(icmpv6Na{})), // nits: 直書きでいいかも
+		dstAddr:      mcastAddr,
+		packetLength: uint32(unsafe.Sizeof(icmpv6Na{})),
 		zero:         [3]byte{0x00, 0x00, 0x00},
 		nextHeader:   IPV6_PROTOCOL_NUM_ICMP,
 	}
-
-	psum := checksum16(phdr.toPseudoHeader(), 0)
 
 	nsPkt := &icmpv6Na{
 		hdr: icmpv6Hdr{
@@ -197,10 +193,11 @@ func sendNsPacket(netDev *netDevice, targetAddr in6Addr) {
 		optMacAddr: netDev.macAddr,
 	}
 
-	nsPkt.hdr.checksum = checksum16(nsPkt.icmpv6NaToPacket(), psum^0xffff)
+	psum := ^checksum16(phdr.toPseudoHeader(), 0)
+	nsPkt.hdr.checksum = checksum16(nsPkt.icmpv6NaToPacket(), psum)
 	fmt.Printf("sending NS...\n")
 
-	ipv6EncapDevMcastOutput(netDev, targetAddr, nsPkt.icmpv6NaToPacket(), IPV6_PROTOCOL_NUM_ICMP)
+	ipv6EncapDevMcastOutput(netDev, mcastAddr, nsPkt.icmpv6NaToPacket(), IPV6_PROTOCOL_NUM_ICMP)
 }
 
 func (icmpv icmpv6Na) icmpv6NaToPacket() []byte {

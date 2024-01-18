@@ -12,16 +12,18 @@ const IPV6_PROTOCOL_NUM_ICMP uint8 = 0x3a
 const ICMPV6_OPTION_SOURCE_LINK_LAYER_ADDRESS uint8 = 1
 const ICMPV6_OPTION_TARGET_LINK_LAYER_ADDRESS uint8 = 2
 
-/**
- * IPv6ルーティングテーブルのルートノード
- */
-var ipv6Fib *patriciaNode
+type ipv6RouteType int
+
+const (
+	CONNECTED ipv6RouteType = iota
+	NETWORK
+)
 
 type in6Addr [16]byte
 
 type ipv6Device struct {
 	address   in6Addr // IPv6アドレス
-	prefixLen uint32  // プレフィックス長(0~128)
+	prefixLen uint8   // プレフィックス長(0~128)
 	scope     uint8   // スコープ
 }
 
@@ -42,7 +44,13 @@ type ipv6PseudoHeader struct {
 	nextHeader   uint8
 }
 
-func newIpv6(addr in6Addr, prefixLen uint32) *ipv6Device {
+type ipv6RouteEntry struct {
+	routeType ipv6RouteType
+	dev       *netDevice
+	nextHop   in6Addr
+}
+
+func newIpv6(addr in6Addr, prefixLen uint8) *ipv6Device {
 	return &ipv6Device{
 		address:   addr,
 		prefixLen: prefixLen,
@@ -74,11 +82,10 @@ func ipv6Input(netDev *netDevice, buffer []byte) {
 		return
 	}
 
-	fmt.Printf("received ipv6 packet next-header 0x%02x %s =>> %s\n", ipv6header.nextHdr, fmtIpStr(ipv6header.srcAddr), fmtIpStr(ipv6header.dstAddr))
-
 	// マルチキャストアドレスの判定
 	if ipv6header.dstAddr[0] == 0xff { // ff00::/8の範囲だったら
 		if reflect.DeepEqual(netDev.ipv6Dev.address[13:16], ipv6header.dstAddr[13:16]) {
+			fmt.Printf("multicast. ip is %s\n", fmtIpStr(ipv6header.dstAddr))
 			ipv6InputToOurs(netDev, &ipv6header, buffer[40:])
 			return
 		}
@@ -86,19 +93,35 @@ func ipv6Input(netDev *netDevice, buffer []byte) {
 
 	// 宛先IPアドレスをルータが持ってるか調べる
 	for _, netDevice := range netDevices {
-		if netDevice.ipv6Dev.address == netDev.ipv6Dev.address {
+		if netDevice.ipv6Dev.address == ipv6header.dstAddr {
+			fmt.Printf("router know ip. device ip is %s\n", fmtIpStr(ipv6header.dstAddr))
 			ipv6InputToOurs(netDev, &ipv6header, buffer[40:])
 			return
 		}
 	}
 
-	/**
-	 * TODO
-	 * 以下から自分宛てのパケットではない場合フォワーディングテーブルの検索を行う
-	 */
-
 	// 宛先IPアドレスがルータの持っているIPアドレスでない場合はフォワーディングを行う
-	patriciaTrieSearch(ipv6Fib, ipv6header.dstAddr)
+	fmt.Printf("start forwarding!\n")
+	resNode := patriciaTrieSearch(ipv6header.dstAddr)
+
+	if resNode == nil {
+		fmt.Printf("no route to %s\n", fmtIpStr(ipv6header.dstAddr))
+		return
+	}
+
+	ipv6header.hopLimit--
+
+	outedPacket := ipv6header.toPacket()
+	outedPacket = append(outedPacket, buffer[40:]...)
+
+	switch resNode.route.routeType {
+	case CONNECTED:
+		fmt.Printf("forwarding ipv6 packet to host\n")
+		ipv6OutputToHost(resNode.route.dev, ipv6header.dstAddr, ipv6header.srcAddr, outedPacket)
+	case NETWORK:
+		fmt.Printf("forwarding ipv6 packet to network\n")
+		ipv6OutputToNextHop(resNode.route.nextHop, outedPacket)
+	}
 }
 
 func ipv6InputToOurs(netDev *netDevice, ipv6header *ipv6Header, buffer []byte) {
@@ -107,7 +130,6 @@ func ipv6InputToOurs(netDev *netDevice, ipv6header *ipv6Header, buffer []byte) {
 		icmpv6Input(netDev, ipv6header.srcAddr, ipv6header.dstAddr, buffer)
 	default:
 		fmt.Printf("unhandled next header : %d\n", ipv6header.nextHdr)
-		return
 	}
 }
 
@@ -120,20 +142,33 @@ func ipv6EncapOutput(dstAddr in6Addr, srcAddr in6Addr, buffer []byte, nextHdrNum
 		srcAddr:    srcAddr,
 		dstAddr:    dstAddr,
 	}
+	packet := ipv6header.toPacket()
+	packet = append(packet, buffer...)
 
 	// ルーティング/フォワーディングが実装されてないとき用
-	for _, dev := range netDevices {
-		if dev.ipv6Dev == nil {
-			continue
-		}
-		// 宛先アドレスと同じネットワークを持ったデバイスを探す
-		if in6IsInNetwork(dstAddr, dev.ipv6Dev.address, int(dev.ipv6Dev.prefixLen)) {
-			var packet []byte
-			packet = ipv6header.toPacket()
-			packet = append(packet, buffer...)
-			ipv6OutputToHost(dev, dstAddr, srcAddr, packet)
+	//for _, dev := range netDevices {
+	//	if dev.ipv6Dev == nil {
+	//		continue
+	//	}
+	//	// 宛先アドレスと同じネットワークを持ったデバイスを探す
+	//	if in6IsInNetwork(dstAddr, dev.ipv6Dev.address, int(dev.ipv6Dev.prefixLen)) {
+	//		var packet []byte
+	//		packet = ipv6header.toPacket()
+	//		packet = append(packet, buffer...)
+	//		ipv6OutputToHost(dev, dstAddr, srcAddr, packet)
+	//
+	//		return
+	//	}
+	//}
 
-			return
+	resNode := patriciaTrieSearch(dstAddr)
+
+	if resNode != nil && resNode.route != nil {
+		switch resNode.route.routeType {
+		case CONNECTED:
+			ipv6OutputToHost(resNode.route.dev, dstAddr, resNode.route.dev.ipv6Dev.address, packet)
+		case NETWORK:
+			ipv6OutputToNextHop(resNode.route.nextHop, packet)
 		}
 	}
 }
@@ -157,12 +192,30 @@ func in6IsInNetwork(address in6Addr, prefix in6Addr, prefixLen int) bool {
 func ipv6OutputToHost(netDev *netDevice, dstAddr in6Addr, srcAddr in6Addr, buffer []byte) {
 	nde := searchNDTableEntry(dstAddr)
 	if nde == nil { // ARPエントリが無かったら
-		fmt.Printf("trying ipv6 output to host, but no nd record to %s\n", net.IP(dstAddr[:]).String())
+		fmt.Printf("trying ipv6 output to host, but no nd record to %s\n", fmtIpStr(dstAddr))
 		sendNsPacket(netDev, dstAddr)
 	} else {
 		// イーサネットでカプセル化して送信
-		fmt.Printf("trying ipv6 output to host, find nd record to %s\n", net.IP(dstAddr[:]).String())
+		fmt.Printf("trying ipv6 output to host, find nd record to %s\n", fmtIpStr(dstAddr))
 		ethernetEncapsulateOutput(nde.dev, nde.macAddr, buffer, ETHER_TYPE_IPV6)
+	}
+}
+
+func ipv6OutputToNextHop(dstAddr in6Addr, buffer []byte) {
+	ndTableEntry := searchNDTableEntry(dstAddr)
+
+	if ndTableEntry == nil {
+		resNode := patriciaTrieSearch(dstAddr)
+
+		if resNode != nil && resNode.route != nil {
+			if resNode.route.routeType == CONNECTED {
+				sendNsPacket(resNode.route.dev, dstAddr)
+				return
+			}
+		}
+	} else {
+		fmt.Printf("found nd entry to next hop!\n")
+		ethernetEncapsulateOutput(ndTableEntry.dev, ndTableEntry.macAddr, buffer, ETHER_TYPE_IPV6)
 	}
 }
 
@@ -203,10 +256,7 @@ func ipv6EncapDevMcastOutput(netDev *netDevice, dstAddr in6Addr, buffer []byte, 
 	var dstMacAddr [6]uint8
 	dstMacAddr[0] = 0x33
 	dstMacAddr[1] = 0x33
-	dstMacAddr[2] = dstAddr[12]
-	dstMacAddr[3] = dstAddr[13]
-	dstMacAddr[4] = dstAddr[14]
-	dstMacAddr[5] = dstAddr[15]
+	copy(dstMacAddr[2:6], dstAddr[12:16])
 
 	ethernetEncapsulateOutput(netDev, dstMacAddr, v6hMybuf, ETHER_TYPE_IPV6)
 }

@@ -86,7 +86,6 @@ func main() {
 	// ndテーブルの初期化
 	initNdTable()
 
-	// TODO: 未実装
 	createPatriciaNode(in6Addr{0x00}, 0, false, nil)
 
 	// ネットワーク設定の投入
@@ -125,8 +124,12 @@ func getNetDevByName(name string) *netDevice {
 }
 
 func configure() {
+	ipv6Fib = createPatriciaNode(in6Addr{}, 0, false, nil)
+
 	configIpv6Addr(getNetDevByName("router1-host1"), parseIpv6("2001:db8:0:1001::1"), 64)
 	configIpv6Addr(getNetDevByName("router1-router2"), parseIpv6("2001:db8:0:1000::1"), 64)
+
+	configIpv6NetRoute(parseIpv6("2001:db8:0:1002::"), 64, parseIpv6("2001:db8:0:1000::2"))
 
 	updateNDTableEntry(getNetDevByName("router1-host1"), getMacAddr("host1", "host1-router1"), parseIpv6("2001:db8:0:1001::2"))
 }

@@ -6,16 +6,34 @@ import (
 	"strings"
 )
 
-func configIpv6Addr(netDev *netDevice, addr in6Addr, prefixLen uint32) {
+func configIpv6NetRoute(prefix in6Addr, prefixLen uint8, nextHop in6Addr) {
+	route := &ipv6RouteEntry{
+		routeType: NETWORK,
+		nextHop:   nextHop,
+	}
+	patriciaTrieInsert(prefix, prefixLen, route)
+
+	fmt.Printf("configure route to %s/%d via %s\n", fmtIpStr(prefix), prefixLen, fmtIpStr(nextHop))
+}
+
+func configIpv6Addr(netDev *netDevice, addr in6Addr, prefixLen uint8) {
 	if netDev == nil {
-		fmt.Sprintf("net device to configure not found\n")
+		fmt.Printf("net device to configure not found\n")
 		return
 	}
 
 	netDev.ipv6Dev.address = addr
 	netDev.ipv6Dev.prefixLen = prefixLen
 
-	fmt.Sprintf("configure ipv6 address to %s\n", fmtIpStr(addr))
+	fmt.Printf("configure ipv6 address to %s\n", fmtIpStr(addr))
+
+	route := &ipv6RouteEntry{
+		routeType: CONNECTED,
+		dev:       netDev,
+	}
+	patriciaTrieInsert(addr, prefixLen, route)
+
+	fmt.Printf("configure directly connected route %s/%d. device name is %s\n", fmtIpStr(in6AddrClearPrefix(addr, prefixLen)), prefixLen, netDev.name)
 }
 
 func getMacAddr(netns string, ifName string) [6]byte {

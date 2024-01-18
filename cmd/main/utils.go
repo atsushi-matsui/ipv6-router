@@ -34,16 +34,23 @@ func uint32ToByte(i uint32) []byte {
 
 func checksum16(buffer []byte, start uint16) uint16 {
 	sum := uint32(start)
-	for i := 0; i < len(buffer); i += 2 {
-		word := uint16(buffer[i])<<8 + uint16(buffer[i+1])
-		sum += uint32(word)
+
+	// まず16ビット毎に足す
+	for i := 0; i < len(buffer)-1; i += 2 {
+		sum += uint32(binary.BigEndian.Uint16(buffer[i : i+2]))
 	}
 
-	// 桁溢れも加算する
-	sum = (sum & 0xffff) + (sum >> 16)
+	// もし1バイト余ってたら足す
+	if len(buffer)%2 != 0 {
+		sum += uint32(buffer[len(buffer)-1])
+	}
 
-	// 補数を返す
-	return uint16(sum ^ 0xffff)
+	// あふれた桁を折り返して足す
+	for sum>>16 > 0 {
+		sum = (sum & 0xffff) + (sum >> 16)
+	}
+
+	return uint16(^sum)
 }
 
 func fmtMacStr(macAddr [6]byte) string {
